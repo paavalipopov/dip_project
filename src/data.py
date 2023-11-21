@@ -23,12 +23,10 @@ def data_factory(cfg: DictConfig):
     Processed data is a dictionary with
     {
         "main": cfg.dataset.name dataset,
-        "{additional_datasets}": additional test datsets (optional),
     }
     data_info is a dictionary with
     {
         "main": main dataset info (depends on the processor),
-        "{additional_datasets}": additional test datsets info (optional),
     }
     """
     # load dataset
@@ -42,32 +40,12 @@ def data_factory(cfg: DictConfig):
         ) from e
 
     try:
-        ts_data, labels = dataset_module.load_data(cfg)
+        data, labels = dataset_module.load_data(cfg)
     except AttributeError as e:
         raise AttributeError(
             f"'src.datasets.{cfg.dataset.name}' has no function\
                              'load_data'. Is the function misnamed/not defined?"
         ) from e
-
-    # select tuning holdout (if needed)
-    if "tuning_holdout" in cfg.dataset and cfg.dataset.tuning_holdout:
-        assert (
-            cfg.dataset.tuning_split is not None
-        ), "you must specify 'exp.tuning_split' if \
-                 'exp.tuning_holdout' is set to True"
-        assert isinstance(cfg.dataset.tuning_split, int)
-
-        skf = StratifiedKFold(
-            n_splits=cfg.dataset.tuning_split, shuffle=True, random_state=42
-        )
-        CV_folds = list(skf.split(ts_data, labels))
-        train_index, test_index = CV_folds[0]
-        if cfg.mode.name == "tune":
-            ts_data = ts_data[test_index]
-            labels = labels[test_index]
-        else:
-            ts_data = ts_data[train_index]
-            labels = labels[train_index]
 
     # process data
     if "custom_processor" not in cfg.dataset or not cfg.dataset.custom_processor:
@@ -94,9 +72,7 @@ def data_factory(cfg: DictConfig):
 
     data = {}
     data_info = {}
-    data["main"], data_info["main"] = processor(cfg, (ts_data, labels))
-
-    # TODO: add additional test datasets
+    data["main"], data_info["main"] = processor(cfg, (data, labels))
 
     with open_dict(cfg):
         cfg.dataset.data_info = data_info
@@ -104,75 +80,27 @@ def data_factory(cfg: DictConfig):
     return data
 
 
-def common_processor(cfg: DictConfig, data):
+def common_processor(cfg: DictConfig, raw_data):
     """
     Return processed data and data_info based on config
-
-    "TS" data is z-scored over time if cfg.model.zscore is True
-    "FNC" is obtained using Pearson correlation coefficients
 
     Returns (data, data_info) tuple.
     Data is a dict with
     {
-        "TS": TS-data of shape [subjects, time, components],
+        "data": data,
         "labels": labels
-    } if cfg.model.data_type is TS or undefined;
-    {
-        "FNC": FNC-data of shape [subjects, components, components],
-        "labels": labels
-    } if cfg.model.data_type is FNC;
-    {
-        "FNC": FNC-data of shape [subjects, flattened_upper_FNC_triangle],
-        "labels": labels
-    } if cfg.model.data_type is tri-FNC;
-    {
-        "TS": TS-data of shape [subjects, time, components],
-        "FNC": FNC-data of shape [subjects, components, components],
-        "labels": labels
-    } if cfg.model.data_type is TS-FNC;
+    }
 
     data_info is a DictConfig with
     {
-        "data_shape": TS or FNC data shape, or a dict
-            {
-                "TS": shape,
-                "FNC": shape,
-            }, if cfg.model.data_type is TS-FNC
+        "data_shape": shape of the images data,
         "n_classes": n_classes,
     }
     )
     """
 
-    ts_data, labels = data
+    data, labels = raw_data
     n_classes = np.unique(labels).shape[0]
-
-    # z-score the data over time
-    if cfg.dataset.zscore:
-        ts_data = stats.zscore(ts_data, axis=1)
-
-    # use TS data as is
-    if "data_type" not in cfg.model or cfg.model.data_type == "TS":
-        data = {"TS": ts_data, "labels": labels}
-        data_shape = ts_data.shape
-    # derive FNC data
-    elif cfg.model.data_type in ["FNC", "tri-FNC", "TS-FNC"]:
-        pearson = np.zeros((ts_data.shape[0], ts_data.shape[2], ts_data.shape[2]))
-        for i in range(ts_data.shape[0]):
-            pearson[i, :, :] = np.corrcoef(ts_data[i, :, :], rowvar=False)
-
-        if cfg.model.data_type == "FNC":
-            data = {"FNC": pearson, "labels": labels}
-            data_shape = pearson.shape
-        elif cfg.model.data_type == "tri-FNC":
-            tril_inx = np.tril_indices(pearson.shape[1])
-            triangle = np.zeros((pearson.shape[0], tril_inx[0].shape[0]))
-            for i in range(triangle.shape[0]):
-                triangle[i] = pearson[i][tril_inx]
-            data = {"FNC": triangle, "labels": labels}
-            data_shape = triangle.shape
-        elif cfg.model.data_type == "TS-FNC":
-            data = {"TS": ts_data, "FNC": pearson, "labels": labels}
-            data_shape = {"TS": ts_data.shape, "FNC": pearson.shape}
 
     data_info = OmegaConf.create(
         {

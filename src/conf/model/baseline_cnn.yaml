@@ -1,14 +1,7 @@
-name: mlp # must create '{name}.py' module in src/models with:
+name: baseline_cnn # must create '{name}.py' module in src/models with:
 # 1. 'get_model(cfg, model_cfg)' defined. 'model_cfg' normally stores HPs and input shape info
 # 2. 'random_HPs(cfg)' and/or 'default_HPs(cfg)' defined. 'cfg' normally stores dataset shape info
 # see 'src.model.model_factory' and 'src.models.mlp' module for reference
-
-data_type: TS # optional (default: TS), TS, FNC, TS-FNC.
-# used in 'src.data.common_processor'
-
-allow_test_ds: True # optional (default: False), True, False
-# if model can be tested on other datasets without the need of reshaping them
-# (e.g., it is time-length agnostic), set to True
 
 tunable: True # optional (default: True), True, False;
 # if you want to be able to tune the model in 'tune' mode, set to True. 

@@ -47,7 +47,7 @@ class ResidualBlock(nn.Module):
         return self.block(x) + x
 
 
-class MLP(nn.Module):
+class BaselineCNN(nn.Module):
     """
     MLP model for fMRI data.
     Expected input shape: [batch_size, time_length, input_feature_size].
@@ -64,6 +64,28 @@ class MLP(nn.Module):
 
     def __init__(self, model_cfg: DictConfig):
         super().__init__()
+
+        self.cnn = nn.Sequential(
+            nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+        )
+
+        fc1 = nn.Linear(64 * (input_size[1] // 4) * (input_size[2] // 4), 128)  # Adjusted size
+        relu = nn.ReLU()
+        fc2 = nn.Linear(128, 10)
+
+        model = models.Sequential()
+        model.add(layers.Conv2D(32, (3, 3), activation='relu', input_shape=(28, 28, 1)))
+        model.add(layers.MaxPooling2D((2, 2)))
+        model.add(layers.Conv2D(64, (3, 3), activation='relu'))
+        model.add(layers.MaxPooling2D((2, 2)))
+        model.add(layers.Conv2D(64, (3, 3), activation='relu'))
+        model.add(layers.Flatten())
+        model.add(layers.Dense(64, activation='relu'))
+        model.add(layers.Dense(10, activation='softmax'))
 
         input_size = model_cfg.input_size
         output_size = model_cfg.output_size
