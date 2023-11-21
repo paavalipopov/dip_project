@@ -9,16 +9,17 @@ from omegaconf import OmegaConf, DictConfig
 
 
 def get_model(cfg: DictConfig, model_cfg: DictConfig):
-    return MLP(model_cfg)
+    return BaselineCNN(model_cfg)
 
 
 def default_HPs(cfg: DictConfig):
     model_cfg = {
-        "dropout": 0.11,
-        "hidden_size": 150,
-        "num_layers": 0,
-        "lr": 0.00027,
-        "input_size": cfg.dataset.data_info.main.data_shape[2],
+        # "dropout": 0.11,
+        # "hidden_size": 150,
+        # "num_layers": 0,
+        # "lr": 0.00027,
+        "input_channels": cfg.dataset.data_info.main.data_shape[3],
+        "input_size": cfg.dataset.data_info.main.data_shape[1],
         "output_size": cfg.dataset.data_info.main.n_classes,
     }
     return OmegaConf.create(model_cfg)
@@ -26,11 +27,12 @@ def default_HPs(cfg: DictConfig):
 
 def random_HPs(cfg: DictConfig):
     model_cfg = {
-        "dropout": uniform(0.1, 0.9),
-        "hidden_size": randint(32, 256),
-        "num_layers": randint(0, 4),
-        "lr": 10 ** uniform(-4, -3),
-        "input_size": cfg.dataset.data_info.main.data_shape[2],
+        # "dropout": uniform(0.1, 0.9),
+        # "hidden_size": randint(32, 256),
+        # "num_layers": randint(0, 4),
+        # "lr": 10 ** uniform(-4, -3),
+        "input_channels": cfg.dataset.data_info.main.data_shape[3],
+        "input_size": cfg.dataset.data_info.main.data_shape[1],
         "output_size": cfg.dataset.data_info.main.n_classes,
     }
     return OmegaConf.create(model_cfg)
@@ -66,73 +68,38 @@ class BaselineCNN(nn.Module):
         super().__init__()
 
         self.cnn = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(model_cfg.input_channels, 16, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
-        )
-
-        fc1 = nn.Linear(64 * (input_size[1] // 4) * (input_size[2] // 4), 128)  # Adjusted size
-        relu = nn.ReLU()
-        fc2 = nn.Linear(128, 10)
-
-        model = models.Sequential()
-        model.add(layers.Conv2D(32, (3, 3), activation='relu', input_shape=(28, 28, 1)))
-        model.add(layers.MaxPooling2D((2, 2)))
-        model.add(layers.Conv2D(64, (3, 3), activation='relu'))
-        model.add(layers.MaxPooling2D((2, 2)))
-        model.add(layers.Conv2D(64, (3, 3), activation='relu'))
-        model.add(layers.Flatten())
-        model.add(layers.Dense(64, activation='relu'))
-        model.add(layers.Dense(10, activation='softmax'))
-
-        input_size = model_cfg.input_size
-        output_size = model_cfg.output_size
-        dropout = model_cfg.dropout
-        hidden_size = model_cfg.hidden_size
-        num_layers = model_cfg.num_layers
-
-        # input block
-        layers = [
-            nn.LayerNorm(input_size),
-            nn.Dropout(p=dropout),
-            nn.Linear(input_size, hidden_size),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
-        ]
-        # inter blocks
-        for _ in range(num_layers):
-            layers.append(
-                ResidualBlock(
-                    nn.Sequential(
-                        nn.LayerNorm(hidden_size),
-                        nn.Dropout(p=dropout),
-                        nn.Linear(hidden_size, hidden_size),
-                        nn.ReLU(),
-                    )
-                )
-            )
-        # output block
-        layers.append(
-            nn.Sequential(
-                nn.LayerNorm(hidden_size),
-                nn.Dropout(p=dropout),
-                nn.Linear(hidden_size, output_size),
-            )
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
         )
 
-        self.fc = nn.Sequential(*layers)
+        output_figure_size = model_cfg.input_size / 2**5 * 64
+        self.dense = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(64 * output_figure_size**2, 128),
+            nn.ReLU(),
+            nn.Linear(128, 128),
+            nn.ReLU(),
+            nn.Linear(128, model_cfg.output_size),
+        )
 
-    def forward(self, x: torch.Tensor, introspection=False):
-        bs, tl, fs = x.shape  # [batch_size, time_length, input_feature_size]
+    def forward(self, x: torch.Tensor):
+        cnn_output = self.cnn(x)
 
-        fc_output = self.fc(x.view(-1, fs))
-        fc_output = fc_output.view(bs, tl, -1)
-
-        logits = fc_output.mean(1)
-
-        if introspection:
-            predictions = torch.argmax(logits, axis=-1)
-            return fc_output, predictions
+        logits = self.dense(cnn_output)
 
         return logits
