@@ -14,7 +14,8 @@ def load_data(
     class_1 = np.load(f"{DATA_ROOT}/np_data/512x512/train/class_1.npz")
     class_2 = np.load(f"{DATA_ROOT}/np_data/512x512/train/class_2.npz")
 
-    data = np.stack((class_1["data"], class_2["data"]), axis=0)
-    labels = np.stack((class_1["labels"], class_2["labels"]), axis=0) - 1
+    data = np.concatenate((class_1["data"], class_2["data"]), axis=0)
+    data = np.transpose(data, axes=(0, 3, 1, 2))
+    labels = np.concatenate((class_1["labels"], class_2["labels"]), axis=0) - 1
 
     return data, labels

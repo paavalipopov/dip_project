@@ -40,7 +40,7 @@ def data_factory(cfg: DictConfig):
         ) from e
 
     try:
-        data, labels = dataset_module.load_data(cfg)
+        raw_data, labels = dataset_module.load_data(cfg)
     except AttributeError as e:
         raise AttributeError(
             f"'src.datasets.{cfg.dataset.name}' has no function\
@@ -72,7 +72,7 @@ def data_factory(cfg: DictConfig):
 
     data = {}
     data_info = {}
-    data["main"], data_info["main"] = processor(cfg, (data, labels))
+    data["main"], data_info["main"] = processor(cfg, (raw_data, labels))
 
     with open_dict(cfg):
         cfg.dataset.data_info = data_info
@@ -100,8 +100,14 @@ def common_processor(cfg: DictConfig, raw_data):
     """
 
     data, labels = raw_data
+    data_shape = data.shape
     n_classes = np.unique(labels).shape[0]
 
+    data = {
+        "data": data,
+        "labels": labels,
+    }
+    
     data_info = OmegaConf.create(
         {
             "data_shape": data_shape,

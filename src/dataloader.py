@@ -45,23 +45,19 @@ def common_dataloader(cfg, original_data, k, trial=None):
         "train": dataloader,
         "valid": dataloader,
         "test": dataloader,
-        "any additional test": dataloader,
     }
     Expects the data produced by src.data.data_factory() with common_processor:
-        Input data is a dict of
         {
-            "main":
-                {
-                "TS": data, (if model is TS or TS-FNC)
-                "FNC": data, (if model is FNC, tri-FNC, or TS-FNC)
-                "labels": data,
-                },
-            "additional test datasets with similar shape"
+        "main":
+            {
+            "data": data,
+            "labels": data,
+            },
         }
 
-    Output dataloaders return tuples with ("TS", "FNC", "labels"), ("TS", "labels"), or ("FNC", "labels") data order
+    Output dataloaders return tuples with ("data", "labels") data order
     """
-    data = deepcopy(original_data)
+    data = original_data
     split_data = {"train": {}, "valid": {}, "test": {}}
 
     # train/test split
@@ -87,19 +83,8 @@ def common_dataloader(cfg, original_data, k, trial=None):
             split_data["train"][key][val_index],
         )
 
-    # shuffle training data time-wise
-    if "permute" in cfg and cfg.permute == "Single":
-        rng = default_rng(seed=42)
-        for i in range(split_data["train"]["TS"].shape[0]):
-            # shuffle time points of each subject independently
-            # axis=0 - time axis of a subject
-            rng.shuffle(split_data["train"]["TS"][i], axis=0)
-
-    # TODO: add support for extra test datasets
-
     # create dataloaders
     dataloaders = {}
-    key_order = ["TS", "FNC", "labels"]
     for key in split_data:
         for data_key in split_data[key]:
             if data_key == "labels":
@@ -110,16 +95,9 @@ def common_dataloader(cfg, original_data, k, trial=None):
                 split_data[key][data_key] = torch.tensor(
                     split_data[key][data_key], dtype=torch.float32
                 )
-        # order-wise unpacking: 'key_order' order should be followed
-        unpacked_tensors = [
-            split_data[key].get(data_key)
-            for data_key in key_order
-            if data_key in split_data[key]
-        ]
-        assert len(unpacked_tensors) == len(split_data[key])
 
         dataloaders[key] = DataLoader(
-            TensorDataset(*unpacked_tensors),
+            TensorDataset(split_data[key]["data"], split_data[key]["labels"]),
             batch_size=cfg.mode.batch_size,
             num_workers=0,
             shuffle=key == "train",
